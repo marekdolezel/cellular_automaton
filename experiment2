@@ -1,0 +1,12 @@
+[Grid]
+x = 100
+y = 100
+delta = 0.7
+
+[Polluters]
+count=1
+
+[Polluter1]
+x=3
+y=4
+a=1
