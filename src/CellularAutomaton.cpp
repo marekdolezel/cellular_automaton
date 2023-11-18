@@ -10,10 +10,10 @@
  */
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <ctime>        // std::time
-#include "INIReader.hpp"
 #include <algorithm>    // std::random_shuffle
 
 #include "Statistics.hpp"
@@ -24,13 +24,28 @@
 
 using namespace std;
 
-CellularAutomaton::CellularAutomaton(string simulationConfigFile) 
+extern int Time;
+
+CellularAutomaton::CellularAutomaton(int x, int y, double delta, string simulationConfigFile, string outputFile) 
 {
-    this->LoadSimulationFromFile(simulationConfigFile);
+    cellsGrid = new Grid(x, y);
+
+    windSpeed = new WindField(x, y);
+    windMultipliers = new WindField(x, y);
+    polluters = new Polluters();
+    
+    // create 2 column csv file 'time' 'concentrationOfSystem'
+    stat = new Statistics(2, outputFile);
+
+    stat->SetColName(0, "time");
+    stat->SetColName(1, "concentrationOfSystem");
+
+    int ret_code = this->LoadSimulationFromFile(simulationConfigFile); // TODO: check for return value
 }
 
 CellularAutomaton::~CellularAutomaton()
 {
+    stat->DumpToFile();
     delete stat;
     delete cellsGrid;
     delete windMultipliers;
@@ -40,55 +55,42 @@ CellularAutomaton::~CellularAutomaton()
 
 int CellularAutomaton::LoadSimulationFromFile(string simulationCfgFile)
 {
+    ifstream configurationStream(simulationCfgFile);
+    if (!configurationStream.is_open())
+        throw std::runtime_error("File not found.");
 
-    stat = new Statistics(2, simulationCfgFile + "stat.csv");
-    stat->SetColName(0, "time");
-    stat->SetColName(1, "ConcentrationSystem");
-    INIReader reader(simulationCfgFile);
+    while(!configurationStream.eof()) {
+        int pol_x;
+        int pol_y;
+        int pol_a;
+        configurationStream >> pol_x >> pol_y >> pol_a;
 
-    int x = reader.GetInteger("Grid", "x", -1);
-    int y = reader.GetInteger("Grid", "y", -1);
-    delta = reader.GetReal("Grid", "delta", -1);
+        // if (configurationStream.fail()) {
+            // return -1;
+        // }
 
-    if (x == -1 || y == -1 || delta == -1)
-        return -1;
-
-    cellsGrid = new Grid(x, y);         //cellsGrid->SetCellState(52, 52, 8.0); //.SetState(8.0); // TODO REMOVE 
-    windSpeed = new WindField(x, y);
-    windMultipliers = new WindField(x, y);
-    polluters = new Polluters();
-
-    int numof_polluters = reader.GetInteger("Polluters", "count", 0);
-    for (int i = 0; i < numof_polluters; i++) {
-        string polluter_ininame = "Polluter" + to_string(i+1);
-
-        /* Get (x,y) coordinates of the polluter and pollution amount */
-        int pol_x = reader.GetInteger(polluter_ininame, "x", -1);
-        int pol_y = reader.GetInteger(polluter_ininame, "y", -1); 
-        double pol_a = reader.GetReal(polluter_ininame, "a", -1);
-
-        if (pol_x < 0 || pol_y < 0 || pol_a < 0) 
-            return -2; // we need to destroy some objects
-        
-
+        // coordinates cannot be negative or equal or greater than gridX, gridY
+        if (pol_x < 0 || pol_y < 0 || pol_a < 0 || pol_x >= cellsGrid->GetX() || pol_y >= cellsGrid->GetY()) {
+            throw std::runtime_error("Invalid configuration file.");
+        }
         polluters->AddPolluter(pol_x, pol_y, pol_a);
     }
 
-    int numof_explicit_cells = reader.GetInteger("ExplicitCells", "count", 0);
-    for (int i = 0; i < numof_explicit_cells; i++) {
-        string explicitcell_ininame = "ExplicitCell" + to_string(i+1);
-        int ExplicitCellX = reader.GetInteger(explicitcell_ininame, "x", -1);
-        int ExplicitCellY = reader.GetInteger(explicitcell_ininame, "y", -1);
-        int ExplicitCellA = reader.GetReal(explicitcell_ininame, "a", -1);
+    // int numof_explicit_cells = reader.GetInteger("ExplicitCells", "count", 0);
+    // for (int i = 0; i < numof_explicit_cells; i++) {
+    //     string explicitcell_ininame = "ExplicitCell" + to_string(i+1);
+    //     int ExplicitCellX = reader.GetInteger(explicitcell_ininame, "x", -1);
+    //     int ExplicitCellY = reader.GetInteger(explicitcell_ininame, "y", -1);
+    //     int ExplicitCellA = reader.GetReal(explicitcell_ininame, "a", -1);
 
-        if (ExplicitCellX < 0 || ExplicitCellY < 0 || ExplicitCellA < 0)
-            return -2;  // we need to destroy some objects
+    //     if (ExplicitCellX < 0 || ExplicitCellY < 0 || ExplicitCellA < 0)
+    //         return -2;  // we need to destroy some objects
 
-        if (ExplicitCellX < cellsGrid->GetX() && ExplicitCellY < cellsGrid->GetY())
-            cellsGrid->SetCellState(ExplicitCellX, ExplicitCellY, ExplicitCellA);
-        else
-            return -3; 
-    }
+    //     if (ExplicitCellX < cellsGrid->GetX() && ExplicitCellY < cellsGrid->GetY())
+    //         cellsGrid->SetCellState(ExplicitCellX, ExplicitCellY, ExplicitCellA);
+    //     else
+    //         return -3; 
+    // }
 
     return 0;
 }
@@ -105,7 +107,7 @@ void CellularAutomaton::InitPermutations()
 
     windSpeed->SetNorthSouthWind(2.0);
 }
-void CellularAutomaton::Evolve(int t)
+void CellularAutomaton::Evolve()
 {
     double current_cell_state = 0.0;
     double new_cell_state = 0.0;
@@ -202,8 +204,9 @@ void CellularAutomaton::Evolve(int t)
             SetMaxValueInCell(current_cell_state);
 
         
-    } 
-    stat->AddData(0, t);
+    }
+
+    stat->AddData(0, Time);
     stat->AddData(1, sums);
 
     //cout << "SUMs: = " << sums << endl;

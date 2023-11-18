@@ -35,11 +35,11 @@ private:
     Polluters *polluters;
     double MaxValue;
 public:
-    CellularAutomaton(string simulationConfigFile);
+    CellularAutomaton(int x, int y, double delta, string simulationConfigFile, string outputFile);
     ~CellularAutomaton();
     int LoadSimulationFromFile(string simulationCfgFile);
     void InitPermutations();
-    void Evolve(int t);
+    void Evolve();
     void SwapGrids();
     Grid *GetGrid();
     double GetMaxValueInCell();

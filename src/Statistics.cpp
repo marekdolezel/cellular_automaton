@@ -68,7 +68,6 @@ void Statistics::DumpToFile()
         return;
     }
 
-
     for (int column = 0; column < Columns; column++) {
         if (column + 1 == Columns) 
             filedump << ColName.at(column);

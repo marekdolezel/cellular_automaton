@@ -18,12 +18,7 @@ using namespace std;
 
 Grid::Grid(int x, int y) : size_x(x), size_y(y)
 {
-    for (int row = 0; row < x; row++) {
-        for (int col = 0; col < y; col++) {
-            // cells.push_back(Cell(row,col));
-            cells.push_back(0);
-        }
-    } 
+    cells.resize(size_x * size_y, 0);
 }
 
 Grid::~Grid()
@@ -43,18 +38,18 @@ Grid *Grid::Copy()
     return new_grid;
 }
 
-int Grid::GetX() const
+int Grid::GetX()
 {
     return size_x;
 }
 
-int Grid::GetY() const
+int Grid::GetY()
 {
     return size_y;
 }
 
 
-double Grid::GetCellState(int row, int col) const
+double Grid::GetCellState(int row, int col)
 {
     return cells.at(size_y*row + col);
 }

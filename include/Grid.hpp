@@ -31,10 +31,10 @@ class Grid
         Grid(int x, int y);
         ~Grid();
         Grid* Copy();
-        int GetX() const;
-        int GetY() const;
+        int GetX();
+        int GetY();
 
-        double GetCellState(int row, int col) const;
+        double GetCellState(int row, int col);
         double GetMinState();
         double GetMaxState();
         void SetCellState(int row, int col, double value);

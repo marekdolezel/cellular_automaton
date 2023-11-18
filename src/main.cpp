@@ -16,12 +16,13 @@
 #include <limits>
 #include <iomanip> // for setprecision
 
+#ifdef OPENGL_FOUND
 #include <GL/glut.h>
+#endif
 
 #include <getopt.h>
 
 // 3rd party libraries
-#include <INIReader.hpp> // External INI parser in INIreader directory
 #include <cxxopts.hpp> // replacement for getopt.h
 
 #include "Grid.hpp"
@@ -35,6 +36,8 @@ int Time = 0;
 
 CellularAutomaton* ca;
 
+
+// Options
 template <typename T>
 struct OptionWithArg {
     bool set;
@@ -49,7 +52,11 @@ struct Options {
         Option graphical;
         Option console;
         OptionWithArg<std::string> inputConfigFile;
+        OptionWithArg<std::string> outputResultsFile;
         OptionWithArg<int> endOfSimulationTime;
+        OptionWithArg<int> xgridSize;
+        OptionWithArg<int> ygridSize;
+        OptionWithArg<double> delta;
 } opts = {0};
 
 template <typename T>
@@ -73,9 +80,10 @@ void printOptions(const Options& options) {
     std::cout << "End of Simulation Time: ";
     printOptionWithArg(options.endOfSimulationTime);
 }
+// END: options
 
 
-void consolePrintGrid(const Grid* cellsGrid)
+void consolePrintGrid(Grid* cellsGrid)
 {
     std::cout << "<----Start of Grid at time " << Time << std::endl;
     
@@ -102,105 +110,119 @@ void runSimulationLoop(void)
 {
    ca->InitPermutations();
    while (Time < opts.endOfSimulationTime.value) {
-       
+        #ifdef OPENGL_FOUND
         if (opts.graphical.set)
             openGL_PrintGrid(ca->GetGrid());
         if (opts.console.set)
             consolePrintGrid(ca->GetGrid());
-        ca->Evolve(Time);
-       
-        // ca->SwapGrids();
-        // swap grids here?
+        #else
+        consolePrintGrid(ca->GetGrid());
+        #endif
+        ca->Evolve();
         Time++;
     }
 }
-
-void usage()
-{
-    std::cerr
-        << std::endl
-        << "Usage:" << std::endl  
-        << "simulation: [-f simulation file] -g [-t simulationDuration]" << std::endl
-        << "simulation: [-f simulation file] [-t simulationDuration]" << std::endl
-        << "simulation: [-f simulation file] [-t simulationDuration]" << std::endl << std::endl
-
-        << "You must specify a simulation file with required parameters (-g or -c (implicit -c))" << std::endl
-        << "This is an example of a required simulation file:" << std::endl << std::endl
-        << "\t[Grid]" << std::endl
-        << "\tx = 10" << std::endl
-        << "\ty = 10" << std::endl
-        << "\tdelta = 0.1" << std::endl
-        << "\t;optional sections" << std::endl << std::endl
-        << "\t[Polluters]" << std::endl
-        << "\tcount = 2" << std::endl << std::endl
-
-        << "\t[Polluter1]" << std::endl
-        << "\tx = 1; x coordinate of Polluter 1" << std::endl
-        << "\ty = 1; y coordinate of Polluter 1" << std::endl
-        << "\ta = 10; amount of pollution introduced to cell occupied by Polluter 1" << std::endl << std::endl
-
-        << "\t[Polluter2]" << std::endl
-        << "\tx = 1; x coordinate of Polluter 2" << std::endl
-        << "\ty = 1; y coordinate of Polluter 2" << std::endl
-        << "\ta = 10; amount of pollution introduced to cell occupied by Polluter 2" << std::endl
-
-        << "double max: " << std::numeric_limits<double>::max() << std::endl;
-}
-
 
 int main(int argc, char* argv[])
 {
     int rc = 0;
 
-    cxxopts::Options options("MyProgram", " - command line options");
+    cxxopts::Options options("cellular_automaton", " - command line options");
     options.add_options()
+        #ifdef OPENGL_FOUND
         ("g, graphical", "Enable graphical mode", cxxopts::value<bool>(opts.graphical.set))
         ("c, console", "Enable console mode", cxxopts::value<bool>(opts.console.set))
+        #endif
+        ("x, xgrid", "x size of the grid", cxxopts::value<int>(opts.xgridSize.value))
+        ("y, ygrid", "y size of the grid", cxxopts::value<int>(opts.ygridSize.value))
+        ("d, delta", "delta parameter", cxxopts::value<double>(opts.delta.value))
         ("t, time", "End of simulation time", cxxopts::value<int>(opts.endOfSimulationTime.value))
-        ("f, file", "Simulation configuration file", cxxopts::value<std::string>(opts.inputConfigFile.value))
-        ("h,help", "Print usage");
+        ("i, input_file", "Simulation configuration file", cxxopts::value<std::string>(opts.inputConfigFile.value))
+        ("o, output_file", "Simulation configuration file", cxxopts::value<std::string>(opts.outputResultsFile.value))
+
+        ("h,help", "");
 
     try {
         auto result = options.parse(argc, argv);
 
         // Set recognized options
-        opts.inputConfigFile.set = result.count("file")  > 0 ? true : false;
+        opts.xgridSize.set = result.count("xgrid")  > 0 ? true : false;
+        opts.ygridSize.set = result.count("ygrid")  > 0 ? true : false;
+        opts.delta.set = result.count("delta") > 0 ? true : false;
+        opts.inputConfigFile.set = result.count("input_file")  > 0 ? true : false;
+        opts.outputResultsFile.set = result.count("output_file")  > 0 ? true : false;
         opts.endOfSimulationTime.set = result.count("time")  > 0 ? true : false;
         opts.graphical.set = result.count("graphical")  > 0 ? true : false;
         opts.console.set = result.count("console")  > 0 ? true : false;
 
-        printOptions(opts);
+        // printOptions(opts);
 
-        // CHECK options
-        // Simulation configuration file is required 
-        if (!opts.inputConfigFile.set) {
-            std::cerr << "Error: No simulation configuration file was entered. Provide file with -f option." << std::endl;
-            usage();
-            return -1;
+        if (result.count("help")) {
+            std::cout << options.help() << std::endl;
+            return 0;
         }
 
-        // Simulation time must be set 
+
+        // CHECK options
+        bool printUsageAndExit = false;
+
+        // the grid size x and y are required arguments
+        if (!opts.xgridSize.set || !opts.ygridSize.set) { 
+            std::cerr << "Error: grid size x,y must be set with options -x -y." << std::endl;
+            printUsageAndExit = true;
+        }
+
+        // Delta argument is required
+        if (!opts.delta.set) {
+            std::cerr << "Error: Delta arugment must be set with -d option." << std::endl;
+            printUsageAndExit = true;
+        }
+
+        // Simulation configuration file is required argument
+        if (!opts.inputConfigFile.set) { 
+            std::cerr << "Error: No simulation configuration file was specified. Provide file with -i option." << std::endl;
+            printUsageAndExit = true;
+        }
+
+        // Simulation configuration file is required argument
+        if (!opts.outputResultsFile.set) {
+            std::cerr << "Error: No output file was specified. Provide file with -o option." << std::endl;
+            printUsageAndExit = true;
+        }
+
+        // Simulation time is required argument 
         if (!opts.endOfSimulationTime.set) {
             std::cerr << "Error: Simulation time must be set with -t option." << std::endl;
-            usage();
+            printUsageAndExit = true;
+        }
+
+        if (printUsageAndExit) {
+            std::cout << options.help() << std::endl;
             return -1;
         }
         // END: CHECK options
 
-        ca = new CellularAutomaton(opts.inputConfigFile.value);
-
-        // rc = ca->LoadSimulationFromFile(opts.inputConfigFile.value);
+        try {
+            ca = new CellularAutomaton(opts.xgridSize.value, opts.ygridSize.value, opts.delta.value, opts.inputConfigFile.value, opts.outputResultsFile.value);
+        } catch (const std::exception& e) {
+            // Catch the exception and print the error message
+            std::cout << "Caught exception: " << e.what() << std::endl;
+            return 1;
+        }
         if (rc != 0) {
             cout << "The configuration file is invalid, or (x||y||delta) are out of bands." << endl;
             return  1;
         }
 
         if (opts.graphical.set) {
+            #ifdef OPENGL_FOUND
             render_init(argc, argv);
+            #endif
         }
         else
             runSimulationLoop();
 
+        delete ca;
         return 0;
 
     } catch (const std::exception& e) {
